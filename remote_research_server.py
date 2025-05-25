@@ -7,37 +7,38 @@ from mcp.server.fastmcp import FastMCP
 PAPER_DIR = "papers"
 
 # Initialize FastMCP server
-mcp = FastMCP("research", port=8001)
+mcp = FastMCP("research", port=8001, host='0.0.0.0')
+
 
 @mcp.tool()
 def search_papers(topic: str, max_results: int = 5) -> List[str]:
     """
     Search for papers on arXiv based on a topic and store their information.
-    
+
     Args:
         topic: The topic to search for
         max_results: Maximum number of results to retrieve (default: 5)
-        
+
     Returns:
         List of paper IDs found in the search
     """
-    
-    # Use arxiv to find the papers 
+
+    # Use arxiv to find the papers
     client = arxiv.Client()
 
     # Search for the most relevant articles matching the queried topic
     search = arxiv.Search(
-        query = topic,
-        max_results = max_results,
-        sort_by = arxiv.SortCriterion.Relevance
+        query=topic,
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.Relevance
     )
 
     papers = client.results(search)
-    
+
     # Create directory for this topic
     path = os.path.join(PAPER_DIR, topic.lower().replace(" ", "_"))
     os.makedirs(path, exist_ok=True)
-    
+
     file_path = os.path.join(path, "papers_info.json")
 
     # Try to load existing papers info
@@ -47,7 +48,7 @@ def search_papers(topic: str, max_results: int = 5) -> List[str]:
     except (FileNotFoundError, json.JSONDecodeError):
         papers_info = {}
 
-    # Process each paper and add to papers_info  
+    # Process each paper and add to papers_info
     paper_ids = []
     for paper in papers:
         paper_ids.append(paper.get_short_id())
@@ -59,27 +60,28 @@ def search_papers(topic: str, max_results: int = 5) -> List[str]:
             'published': str(paper.published.date())
         }
         papers_info[paper.get_short_id()] = paper_info
-    
+
     # Save updated papers_info to json file
     with open(file_path, "w") as json_file:
         json.dump(papers_info, json_file, indent=2)
-    
+
     print(f"Results are saved in: {file_path}")
-    
+
     return paper_ids
+
 
 @mcp.tool()
 def extract_info(paper_id: str) -> str:
     """
     Search for information about a specific paper across all topic directories.
-    
+
     Args:
         paper_id: The ID of the paper to look for
-        
+
     Returns:
         JSON string with paper information if found, error message if not found
     """
- 
+
     for item in os.listdir(PAPER_DIR):
         item_path = os.path.join(PAPER_DIR, item)
         if os.path.isdir(item_path):
@@ -93,20 +95,19 @@ def extract_info(paper_id: str) -> str:
                 except (FileNotFoundError, json.JSONDecodeError) as e:
                     print(f"Error reading {file_path}: {str(e)}")
                     continue
-    
-    return f"There's no saved information related to paper {paper_id}."
 
+    return f"There's no saved information related to paper {paper_id}."
 
 
 @mcp.resource("papers://folders")
 def get_available_folders() -> str:
     """
     List all available topic folders in the papers directory.
-    
+
     This resource provides a simple list of all available topic folders.
     """
     folders = []
-    
+
     # Get all topic directories
     if os.path.exists(PAPER_DIR):
         for topic_dir in os.listdir(PAPER_DIR):
@@ -115,7 +116,7 @@ def get_available_folders() -> str:
                 papers_file = os.path.join(topic_path, "papers_info.json")
                 if os.path.exists(papers_file):
                     folders.append(topic_dir)
-    
+
     # Create a simple markdown list
     content = "# Available Topics\n\n"
     if folders:
@@ -124,31 +125,32 @@ def get_available_folders() -> str:
         content += f"\nUse @{folder} to access papers in that topic.\n"
     else:
         content += "No topics found.\n"
-    
+
     return content
+
 
 @mcp.resource("papers://{topic}")
 def get_topic_papers(topic: str) -> str:
     """
     Get detailed information about papers on a specific topic.
-    
+
     Args:
         topic: The research topic to retrieve papers for
     """
     topic_dir = topic.lower().replace(" ", "_")
     papers_file = os.path.join(PAPER_DIR, topic_dir, "papers_info.json")
-    
+
     if not os.path.exists(papers_file):
         return f"# No papers found for topic: {topic}\n\nTry searching for papers on this topic first."
-    
+
     try:
         with open(papers_file, 'r') as f:
             papers_data = json.load(f)
-        
+
         # Create markdown content with paper details
         content = f"# Papers on {topic.replace('_', ' ').title()}\n\n"
         content += f"Total papers: {len(papers_data)}\n\n"
-        
+
         for paper_id, paper_info in papers_data.items():
             content += f"## {paper_info['title']}\n"
             content += f"- **Paper ID**: {paper_id}\n"
@@ -157,10 +159,11 @@ def get_topic_papers(topic: str) -> str:
             content += f"- **PDF URL**: [{paper_info['pdf_url']}]({paper_info['pdf_url']})\n\n"
             content += f"### Summary\n{paper_info['summary'][:500]}...\n\n"
             content += "---\n\n"
-        
+
         return content
     except json.JSONDecodeError:
         return f"# Error reading papers data for {topic}\n\nThe papers data file is corrupted."
+
 
 @mcp.prompt()
 def generate_search_prompt(topic: str, num_papers: int = 5) -> str:
@@ -187,6 +190,7 @@ def generate_search_prompt(topic: str, num_papers: int = 5) -> str:
     4. Organize your findings in a clear, structured format with headings and bullet points for easy readability.
     
     Please present both detailed information about each paper and a high-level synthesis of the research landscape in {topic}."""
+
 
 if __name__ == "__main__":
     # Initialize and run the server
