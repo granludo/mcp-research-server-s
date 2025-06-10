@@ -1,4 +1,12 @@
-run the SSE server
+```powershell
+uv venv
+.venv\Scripts\activate
+uv pip install -r requirements.txt
+```
+
+
+
+Run the SSE server
 
 ```bash
 uv run remote_research_server.py
