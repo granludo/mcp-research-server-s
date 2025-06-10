@@ -4,7 +4,17 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
-
+Local MCP Server (stdio)
+```
+ "research-server": {
+        "command": "uv",
+        "args": [
+            "--directory", 
+            "C:\\Users\\Usuario\\research-server", 
+            "run", 
+            "research_server.py"]
+      }
+```
 
 Run the SSE server
 
