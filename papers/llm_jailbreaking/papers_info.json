@@ -1,0 +1,79 @@
+{
+  "2405.20015v2": {
+    "title": "Efficient Indirect LLM Jailbreak via Multimodal-LLM Jailbreak",
+    "authors": [
+      "Zhenxing Niu",
+      "Yuyao Sun",
+      "Haoxuan Ji",
+      "Zheng Lin",
+      "Haichang Gao",
+      "Xinbo Gao",
+      "Gang Hua",
+      "Rong Jin"
+    ],
+    "summary": "This paper focuses on jailbreaking attacks against large language models\n(LLMs), eliciting them to generate objectionable content in response to harmful\nuser queries. Unlike previous LLM-jailbreak methods that directly orient to\nLLMs, our approach begins by constructing a multimodal large language model\n(MLLM) built upon the target LLM. Subsequently, we perform an efficient MLLM\njailbreak and obtain a jailbreaking embedding. Finally, we convert the\nembedding into a textual jailbreaking suffix to carry out the jailbreak of\ntarget LLM. Compared to the direct LLM-jailbreak methods, our indirect\njailbreaking approach is more efficient, as MLLMs are more vulnerable to\njailbreak than pure LLM. Additionally, to improve the attack success rate of\njailbreak, we propose an image-text semantic matching scheme to identify a\nsuitable initial input. Extensive experiments demonstrate that our approach\nsurpasses current state-of-the-art jailbreak methods in terms of both\nefficiency and effectiveness. Moreover, our approach exhibits superior\ncross-class generalization abilities.",
+    "pdf_url": "http://arxiv.org/pdf/2405.20015v2",
+    "published": "2024-05-30"
+  },
+  "2312.04127v2": {
+    "title": "Analyzing the Inherent Response Tendency of LLMs: Real-World Instructions-Driven Jailbreak",
+    "authors": [
+      "Yanrui Du",
+      "Sendong Zhao",
+      "Ming Ma",
+      "Yuhan Chen",
+      "Bing Qin"
+    ],
+    "summary": "Extensive work has been devoted to improving the safety mechanism of Large\nLanguage Models (LLMs). However, LLMs still tend to generate harmful responses\nwhen faced with malicious instructions, a phenomenon referred to as \"Jailbreak\nAttack\". In our research, we introduce a novel automatic jailbreak method\nRADIAL, which bypasses the security mechanism by amplifying the potential of\nLLMs to generate affirmation responses. The jailbreak idea of our method is\n\"Inherent Response Tendency Analysis\" which identifies real-world instructions\nthat can inherently induce LLMs to generate affirmation responses and the\ncorresponding jailbreak strategy is \"Real-World Instructions-Driven Jailbreak\"\nwhich involves strategically splicing real-world instructions identified\nthrough the above analysis around the malicious instruction. Our method\nachieves excellent attack performance on English malicious instructions with\nfive open-source advanced LLMs while maintaining robust attack performance in\nexecuting cross-language attacks against Chinese malicious instructions. We\nconduct experiments to verify the effectiveness of our jailbreak idea and the\nrationality of our jailbreak strategy design. Notably, our method designed a\nsemantically coherent attack prompt, highlighting the potential risks of LLMs.\nOur study provides detailed insights into jailbreak attacks, establishing a\nfoundation for the development of safer LLMs.",
+    "pdf_url": "http://arxiv.org/pdf/2312.04127v2",
+    "published": "2023-12-07"
+  },
+  "2411.11114v2": {
+    "title": "JailbreakLens: Interpreting Jailbreak Mechanism in the Lens of Representation and Circuit",
+    "authors": [
+      "Zeqing He",
+      "Zhibo Wang",
+      "Zhixuan Chu",
+      "Huiyu Xu",
+      "Wenhui Zhang",
+      "Qinglong Wang",
+      "Rui Zheng"
+    ],
+    "summary": "Despite the outstanding performance of Large language Models (LLMs) in\ndiverse tasks, they are vulnerable to jailbreak attacks, wherein adversarial\nprompts are crafted to bypass their security mechanisms and elicit unexpected\nresponses. Although jailbreak attacks are prevalent, the understanding of their\nunderlying mechanisms remains limited. Recent studies have explained typical\njailbreaking behavior (e.g., the degree to which the model refuses to respond)\nof LLMs by analyzing representation shifts in their latent space caused by\njailbreak prompts or identifying key neurons that contribute to the success of\njailbreak attacks. However, these studies neither explore diverse jailbreak\npatterns nor provide a fine-grained explanation from the failure of circuit to\nthe changes of representational, leaving significant gaps in uncovering the\njailbreak mechanism. In this paper, we propose JailbreakLens, an interpretation\nframework that analyzes jailbreak mechanisms from both representation (which\nreveals how jailbreaks alter the model's harmfulness perception) and circuit\nperspectives~(which uncovers the causes of these deceptions by identifying key\ncircuits contributing to the vulnerability), tracking their evolution\nthroughout the entire response generation process. We then conduct an in-depth\nevaluation of jailbreak behavior on five mainstream LLMs under seven jailbreak\nstrategies. Our evaluation reveals that jailbreak prompts amplify components\nthat reinforce affirmative responses while suppressing those that produce\nrefusal. This manipulation shifts model representations toward safe clusters to\ndeceive the LLM, leading it to provide detailed responses instead of refusals.\nNotably, we find a strong and consistent correlation between representation\ndeception and activation shift of key circuits across diverse jailbreak methods\nand multiple LLMs.",
+    "pdf_url": "http://arxiv.org/pdf/2411.11114v2",
+    "published": "2024-11-17"
+  },
+  "2503.06989v1": {
+    "title": "Utilizing Jailbreak Probability to Attack and Safeguard Multimodal LLMs",
+    "authors": [
+      "Wenzhuo Xu",
+      "Zhipeng Wei",
+      "Xiongtao Sun",
+      "Deyue Zhang",
+      "Dongdong Yang",
+      "Quanchen Zou",
+      "Xiangzheng Zhang"
+    ],
+    "summary": "Recently, Multimodal Large Language Models (MLLMs) have demonstrated their\nsuperior ability in understanding multimodal contents. However, they remain\nvulnerable to jailbreak attacks, which exploit weaknesses in their safety\nalignment to generate harmful responses. Previous studies categorize jailbreaks\nas successful or failed based on whether responses contain malicious content.\nHowever, given the stochastic nature of MLLM responses, this binary\nclassification of an input's ability to jailbreak MLLMs is inappropriate.\nDerived from this viewpoint, we introduce jailbreak probability to quantify the\njailbreak potential of an input, which represents the likelihood that MLLMs\ngenerated a malicious response when prompted with this input. We approximate\nthis probability through multiple queries to MLLMs. After modeling the\nrelationship between input hidden states and their corresponding jailbreak\nprobability using Jailbreak Probability Prediction Network (JPPN), we use\ncontinuous jailbreak probability for optimization. Specifically, we propose\nJailbreak-Probability-based Attack (JPA) that optimizes adversarial\nperturbations on inputs to maximize jailbreak probability. To counteract\nattacks, we also propose two defensive methods: Jailbreak-Probability-based\nFinetuning (JPF) and Jailbreak-Probability-based Defensive Noise (JPDN), which\nminimizes jailbreak probability in the MLLM parameters and input space,\nrespectively. Extensive experiments show that (1) JPA yields improvements (up\nto 28.38\\%) under both white and black box settings compared to previous\nmethods with small perturbation bounds and few iterations. (2) JPF and JPDN\nsignificantly reduce jailbreaks by at most over 60\\%. Both of the above results\ndemonstrate the significance of introducing jailbreak probability to make\nnuanced distinctions among input jailbreak abilities.",
+    "pdf_url": "http://arxiv.org/pdf/2503.06989v1",
+    "published": "2025-03-10"
+  },
+  "2502.07557v1": {
+    "title": "JBShield: Defending Large Language Models from Jailbreak Attacks through Activated Concept Analysis and Manipulation",
+    "authors": [
+      "Shenyi Zhang",
+      "Yuchen Zhai",
+      "Keyan Guo",
+      "Hongxin Hu",
+      "Shengnan Guo",
+      "Zheng Fang",
+      "Lingchen Zhao",
+      "Chao Shen",
+      "Cong Wang",
+      "Qian Wang"
+    ],
+    "summary": "Despite the implementation of safety alignment strategies, large language\nmodels (LLMs) remain vulnerable to jailbreak attacks, which undermine these\nsafety guardrails and pose significant security threats. Some defenses have\nbeen proposed to detect or mitigate jailbreaks, but they are unable to\nwithstand the test of time due to an insufficient understanding of jailbreak\nmechanisms. In this work, we investigate the mechanisms behind jailbreaks based\non the Linear Representation Hypothesis (LRH), which states that neural\nnetworks encode high-level concepts as subspaces in their hidden\nrepresentations. We define the toxic semantics in harmful and jailbreak prompts\nas toxic concepts and describe the semantics in jailbreak prompts that\nmanipulate LLMs to comply with unsafe requests as jailbreak concepts. Through\nconcept extraction and analysis, we reveal that LLMs can recognize the toxic\nconcepts in both harmful and jailbreak prompts. However, unlike harmful\nprompts, jailbreak prompts activate the jailbreak concepts and alter the LLM\noutput from rejection to compliance. Building on our analysis, we propose a\ncomprehensive jailbreak defense framework, JBShield, consisting of two key\ncomponents: jailbreak detection JBShield-D and mitigation JBShield-M.\nJBShield-D identifies jailbreak prompts by determining whether the input\nactivates both toxic and jailbreak concepts. When a jailbreak prompt is\ndetected, JBShield-M adjusts the hidden representations of the target LLM by\nenhancing the toxic concept and weakening the jailbreak concept, ensuring LLMs\nproduce safe content. Extensive experiments demonstrate the superior\nperformance of JBShield, achieving an average detection accuracy of 0.95 and\nreducing the average attack success rate of various jailbreak attacks to 2%\nfrom 61% across distinct LLMs.",
+    "pdf_url": "http://arxiv.org/pdf/2502.07557v1",
+    "published": "2025-02-11"
+  }
+}
