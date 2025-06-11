@@ -1,7 +1,7 @@
 ```powershell
 uv venv
 .venv\Scripts\activate
-uv pip install -r requirements.txt
+uv pip install -r pyproject.toml
 ```
 
 Local MCP Server (stdio)
