@@ -208,31 +208,49 @@ class ResearchMCPServer:
 
     # MCP Tool Implementations
 
-    def list_search_engines(self) -> Dict:
+    def list_search_engines(self, verbose: bool = False) -> Dict:
         """
         Returns all discovered search engines including modules and local database.
 
+        Args:
+            verbose: If true, returns detailed information including descriptions and types.
+                    If false, returns only id and name for brevity.
+
         Returns:
-            Dictionary containing all search engines with their status
+            Dictionary containing search engines information
         """
         try:
             engines = self.search_engine_manager.get_all_discovered_engines()
 
-            result = {
-                "engines": [
-                    {
-                        "id": engine.id,
-                        "name": engine.name,
-                        "description": getattr(engine, 'description', ''),
-                        "type": "external" if engine.id != "local" else "internal",
-                        "is_available": engine.is_available()
-                    }
-                    for engine in engines
-                ],
-                "total_count": len(engines)
-            }
+            if verbose:
+                # Full information with descriptions, types, and availability
+                result = {
+                    "engines": [
+                        {
+                            "id": engine.id,
+                            "name": engine.name,
+                            "description": getattr(engine, 'description', ''),
+                            "type": "external" if engine.id != "local" else "internal",
+                            "is_available": engine.is_available()
+                        }
+                        for engine in engines
+                    ],
+                    "total_count": len(engines)
+                }
+            else:
+                # Minimal information - just id and name
+                result = {
+                    "engines": [
+                        {
+                            "id": engine.id,
+                            "name": engine.name
+                        }
+                        for engine in engines
+                    ],
+                    "total_count": len(engines)
+                }
 
-            logger.debug(f"Listed {len(engines)} search engines")
+            logger.debug(f"Listed {len(engines)} search engines (verbose={verbose})")
             return result
 
         except Exception as e:

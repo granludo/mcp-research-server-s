@@ -10,6 +10,7 @@ This module handles:
 
 import importlib
 import inspect
+import json
 import logging
 import os
 import re
@@ -47,6 +48,11 @@ class BaseSearchEngine:
     def id(self) -> str:
         """Unique identifier for the search engine."""
         raise NotImplementedError
+
+    @property
+    def description(self) -> str:
+        """Description of the search engine."""
+        return "Academic search engine"
 
     def is_available(self) -> bool:
         """
@@ -356,6 +362,11 @@ class LocalSearchEngine(BaseSearchEngine):
     def id(self) -> str:
         return self._id
 
+    @property
+    def description(self) -> str:
+        """Description of the search engine."""
+        return "Search within locally stored papers and research materials"
+
     def is_available(self) -> bool:
         """Local database is always available."""
         return True
@@ -376,10 +387,80 @@ class LocalSearchEngine(BaseSearchEngine):
             project_id = kwargs.get('project_id')
             limit = kwargs.get('max_results', 10)
 
-            # For now, return empty list - this will be implemented
-            # when we have the full search functionality in database.py
-            logger.debug(f"Local search for query: '{query}' (project: {project_id})")
-            return []
+            logger.debug(f"Local search for query: '{query}' (project: {project_id}, limit: {limit})")
+
+            # Ensure database is initialized
+            if not hasattr(self.db_manager, '_connection') or self.db_manager._connection is None:
+                logger.debug("Initializing database connection for local search")
+                if hasattr(self.db_manager, '_initialize_sync'):
+                    self.db_manager._initialize_sync()
+                else:
+                    logger.error("Database manager doesn't have sync initialization method")
+                    return []
+
+            # Prepare search query
+            search_query = f"%{query}%"
+
+            # Build SQL query to search across multiple fields
+            sql_query = """
+                SELECT
+                    paper_id,
+                    id,
+                    title,
+                    authors,
+                    authors_string,
+                    abstract,
+                    publication_year,
+                    publication_info,
+                    source,
+                    source_url,
+                    pdf_url,
+                    doi,
+                    citation_count,
+                    keywords,
+                    project_id
+                FROM papers
+                WHERE (
+                    title LIKE ? OR
+                    abstract LIKE ? OR
+                    authors LIKE ? OR
+                    keywords LIKE ?
+                )
+            """
+
+            params = [search_query] * 4
+
+            # Add project filter if specified
+            if project_id:
+                sql_query += " AND project_id = ?"
+                params.append(project_id)
+
+            # Add limit
+            sql_query += " ORDER BY publication_year DESC LIMIT ?"
+            params.append(limit)
+
+            # Execute query
+            cursor = self.db_manager._connection.execute(sql_query, params)
+            rows = cursor.fetchall()
+
+            results = []
+            for row in rows:
+                # Create clean result matching PRD specification
+                paper = {
+                    'paper_id': row['paper_id'],
+                    'id': row['id'],
+                    'title': row['title'],
+                    'year': row['publication_year'],
+                    'publication': row['publication_info'] or '',
+                    'authors': json.loads(row['authors']) if row['authors'] else [],
+                    'keywords': json.loads(row['keywords']) if row['keywords'] else [],
+                    'source': row['source'],
+                    'project_id': row['project_id'] or None
+                }
+                results.append(paper)
+
+            logger.debug(f"Found {len(results)} results from local database")
+            return results
 
         except Exception as e:
             logger.error(f"Error in local search: {e}")
@@ -861,10 +942,9 @@ class SearchEngineManager:
                     **kwargs
                 )
 
-                # Add source information to results
+                # Add source information to results (only PRD-compliant fields)
                 for result in engine_results:
                     result['source'] = engine.id
-                    result['_engine_name'] = engine.name
 
                 all_results.extend(engine_results)
                 logger.debug(f"Found {len(engine_results)} results from {engine.name}")
@@ -872,6 +952,62 @@ class SearchEngineManager:
             except Exception as e:
                 logger.error(f"Error searching {engine.name}: {e}")
                 # Continue with other engines
+
+        # Automatically store results in database to assign proper IDs
+        if all_results:
+            try:
+                project_id = kwargs.get('project_id')
+
+                # If no project specified, create/use a default search results project
+                if not project_id:
+                    project_id = "search_results"
+                    # Try to create the default project if it doesn't exist
+                    try:
+                        default_project = self.db_manager.create_project(
+                            name="Search Results",
+                            description="Automatically created project for search results"
+                        )
+                        project_id = default_project.get('project_id', 'search_results')
+                        logger.debug(f"Created default search project: {project_id}")
+                    except Exception as e:
+                        logger.debug(f"Default project may already exist: {e}")
+
+                stored_results = self.db_manager.store_search_results(all_results, project_id)
+                logger.debug(f"Stored {len(stored_results)} results in database with project: {project_id}")
+
+                # Filter results to PRD-compliant format (only specified fields)
+                all_results = []
+                for result in stored_results:
+                    prd_result = {
+                        'paper_id': result.get('paper_id'),
+                        'id': result.get('id'),
+                        'title': result.get('title'),
+                        'year': result.get('publication_year'),
+                        'publication': result.get('publication_info', ''),
+                        'authors': json.loads(result.get('authors', '[]')) if isinstance(result.get('authors'), str) else result.get('authors', []),
+                        'keywords': json.loads(result.get('keywords', '[]')) if isinstance(result.get('keywords'), str) else result.get('keywords', []),
+                        'source': result.get('source'),
+                        'project_id': result.get('project_id')
+                    }
+                    all_results.append(prd_result)
+            except Exception as e:
+                logger.error(f"Error storing search results: {e}")
+                # Continue with original results if storage fails, but still filter to PRD format
+                filtered_results = []
+                for result in all_results:
+                    prd_result = {
+                        'paper_id': result.get('paper_id'),
+                        'id': result.get('id'),
+                        'title': result.get('title'),
+                        'year': result.get('year'),
+                        'publication': result.get('publication', ''),
+                        'authors': result.get('authors', []),
+                        'keywords': result.get('keywords', []),
+                        'source': result.get('source'),
+                        'project_id': result.get('project_id')
+                    }
+                    filtered_results.append(prd_result)
+                all_results = filtered_results
 
         logger.info(f"Total results from all engines: {len(all_results)}")
         return all_results

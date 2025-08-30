@@ -181,32 +181,69 @@ CREATE TABLE projects (
 
 ### 1. `list_search_engines`
 **Purpose**: Returns available search engines including modules and local database
-**Parameters**: None
-**Returns**: JSON array of search engine objects
+**Parameters**:
+- `verbose` (boolean, optional): If true, returns detailed information. If false (default), returns minimal information.
+
+**Returns**: Dictionary containing search engines information
+
+**Response Format (verbose=false - default)**:
 ```json
-[
-  {
-    "id": "local",
-    "name": "Local Database",
-    "description": "Search within previously stored papers in the local database",
-    "type": "internal",
-    "is_available": true
-  },
-  {
-    "id": "google_scholar",
-    "name": "Google Scholar",
-    "description": "Comprehensive academic search engine with citation metrics",
-    "type": "external",
-    "is_available": true
-  },
-  {
-    "id": "arxiv",
-    "name": "ArXiv",
-    "description": "Open-access preprint repository for scientific papers",
-    "type": "external",
-    "is_available": true
-  }
-]
+{
+  "engines": [
+    {
+      "id": "local",
+      "name": "Local Database"
+    },
+    {
+      "id": "google_scholar",
+      "name": "Google Scholar"
+    },
+    {
+      "id": "arxiv",
+      "name": "ArXiv"
+    }
+  ],
+  "total_count": 3
+}
+```
+
+**Response Format (verbose=true)**:
+```json
+{
+  "engines": [
+    {
+      "id": "local",
+      "name": "Local Database",
+      "description": "Search within locally stored papers and research materials",
+      "type": "internal",
+      "is_available": true
+    },
+    {
+      "id": "google_scholar",
+      "name": "Google Scholar",
+      "description": "Comprehensive academic search engine with citation metrics and broad coverage across all academic disciplines",
+      "type": "external",
+      "is_available": true
+    },
+    {
+      "id": "arxiv",
+      "name": "ArXiv",
+      "description": "Open-access preprint repository specializing in physics, mathematics, computer science, and related fields",
+      "type": "external",
+      "is_available": true
+    }
+  ],
+  "total_count": 3
+}
+```
+
+**Usage Examples**:
+```json
+// Default - minimal information
+{"verbose": false}
+
+// Detailed information
+{"verbose": true}
 ```
 
 ### 2. `search_papers`

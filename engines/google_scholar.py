@@ -1,25 +1,19 @@
 """
 Google Scholar search engine for the Research MCP Server.
 
-Based on sample_scholar_query.py, this module provides Google Scholar
-search capabilities using the SerpAPI service.
-
-Features:
-- Comprehensive paper metadata extraction
-- Author profile information
-- Citation counts and links
-- BibTeX download links
-- PDF and resource discovery
+This engine integrates with SerpAPI to search Google Scholar for academic papers.
+It provides comprehensive search capabilities including citation tracking,
+author extraction, and metadata parsing.
 """
 
-import os
-import re
+import json
 import logging
-from typing import Dict, List, Optional, Any
-from urllib.parse import urlparse, parse_qs
-
+import re
 import requests
-from config import Config
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+from urllib.parse import urlencode
+
 from search_engines import BaseSearchEngine
 
 logger = logging.getLogger(__name__)
@@ -27,372 +21,96 @@ logger = logging.getLogger(__name__)
 
 class GoogleScholarEngine(BaseSearchEngine):
     """
-    Google Scholar search engine using SerpAPI.
+    Google Scholar search engine implementation using SerpAPI.
 
-    This engine provides comprehensive search capabilities
-    for Google Scholar with rich metadata extraction.
+    Features:
+    - Academic paper search via Google Scholar
+    - Citation tracking and citing papers
+    - Author extraction with LLM enhancement
+    - Publication metadata parsing
+    - PDF link discovery
     """
-
-    def __init__(self):
-        """Initialize Google Scholar engine."""
-        self.config = Config()
-        self.api_key = self.config.get_api_key('google_scholar')
-        self.endpoint = "https://serpapi.com/search.json"
-
-        self._name = "Google Scholar"
-        self._id = "google_scholar"
 
     @property
     def name(self) -> str:
         """Human-readable name of the search engine."""
-        return self._name
+        return "Google Scholar"
 
     @property
     def id(self) -> str:
         """Unique identifier for the search engine."""
-        return self._id
+        return "google_scholar"
+
+    @property
+    def description(self) -> str:
+        """Description of the search engine."""
+        return "Comprehensive academic search engine with citation metrics and broad coverage across all academic disciplines"
 
     def is_available(self) -> bool:
         """
         Check if Google Scholar engine is available.
 
+        Requires SERP_API_KEY environment variable.
+
         Returns:
-            True if SERP_API_KEY is set, False otherwise
+            True if SerpAPI key is available, False otherwise
         """
         import os
-        self.api_key = self.config.get_api_key('google_scholar')
-
-        logger.debug(f"Google Scholar engine checking availability...")
-        logger.debug(f"SERP_API_KEY environment variable set: {bool(os.getenv('SERP_API_KEY'))}")
-        logger.debug(f"Config api_key value: {'***' + self.api_key[-4:] if self.api_key else 'None'}")
-        logger.debug(f"Final availability result: {bool(self.api_key)}")
-
-        return bool(self.api_key)
+        api_key = os.getenv("SERP_API_KEY")
+        return api_key is not None
 
     def search(self, query: str, **kwargs) -> List[Dict[str, Any]]:
         """
-        Search Google Scholar for papers.
+        Search Google Scholar for academic papers.
 
         Args:
-            query: Search query
-            **kwargs: Additional search parameters (max_results, etc.)
+            query: Search query string
+            **kwargs: Additional search parameters
+                - max_results: Maximum number of results (default: 10)
+                - date_from: Start date filter (YYYY-MM-DD)
+                - date_to: End date filter (YYYY-MM-DD)
 
         Returns:
             List of paper dictionaries with standardized format
         """
+        if not self.is_available():
+            logger.warning("Google Scholar engine not available - SERP_API_KEY not found")
+            return []
+
+        max_results = kwargs.get('max_results', 10)
+        date_from = kwargs.get('date_from')
+        date_to = kwargs.get('date_to')
+
         try:
-            max_results = kwargs.get('max_results', 5)
+            results = self._search_google_scholar(query, max_results, date_from, date_to)
+            papers = []
 
-            # Prepare search parameters
-            params = {
-                "engine": "google_scholar",
-                "q": query,
-                "api_key": self.api_key,
-                "num": min(max_results, 20)  # SerpAPI limit
-            }
-
-            logger.debug(f"Searching Google Scholar for: '{query}'")
-
-            # Make API request
-            response = requests.get(
-                self.endpoint,
-                params=params,
-                timeout=self.config.get('request_timeout', 10.0)
-            )
-            response.raise_for_status()
-
-            data = response.json()
-
-            # Extract papers from results
-            papers = self._extract_papers_from_results(data, query)
-
-            logger.info(f"Found {len(papers)} papers from Google Scholar")
-            return papers
-
-        except requests.RequestException as e:
-            logger.error(f"Google Scholar API request failed: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"Error searching Google Scholar: {e}")
-            return []
-
-    def _extract_papers_from_results(self, data: Dict, query: str) -> List[Dict[str, Any]]:
-        """
-        Extract paper information from SerpAPI response.
-
-        Args:
-            data: SerpAPI response data
-            query: Original search query
-
-        Returns:
-            List of standardized paper dictionaries
-        """
-        papers = []
-
-        organic_results = data.get("organic_results", [])
-
-        for i, result in enumerate(organic_results):
-            try:
-                paper = self._extract_paper_from_result(result, i)
+            for result in results:
+                paper = self._extract_paper_from_result(result)
                 if paper:
                     papers.append(paper)
-            except Exception as e:
-                logger.warning(f"Error extracting paper {i}: {e}")
-                continue
 
-        return papers
-
-    def _extract_paper_from_result(self, result: Dict, index: int) -> Optional[Dict[str, Any]]:
-        """
-        Extract paper information from a single SerpAPI result.
-
-        Args:
-            result: Single result from SerpAPI
-            index: Result index for generating IDs
-
-        Returns:
-            Standardized paper dictionary or None if extraction fails
-        """
-        try:
-            # Basic information
-            title = result.get("title", "")
-            link = result.get("link", "")
-            snippet = result.get("snippet", "")
-
-            # Publication information
-            pub_info = result.get("publication_info", {})
-            summary = pub_info.get("summary", "")
-            authors = self._extract_authors(pub_info)  # Now uses centralized parsing
-
-            # Extract year from publication info
-            year = self._extract_year(summary)  # Now uses centralized parsing
-
-            # Citation information
-            inline_links = result.get("inline_links", {})
-            cited_by = inline_links.get("cited_by", {})
-            citation_count = cited_by.get("total", 0)
-            cites_id = cited_by.get("cites_id")
-
-            # Resource links
-            resources = result.get("resources", [])
-            pdf_url = self._find_pdf_url(resources)
-
-            # Generate result ID
-            result_id = result.get("result_id", f"scholar_{index}")
-
-            # Generate human-readable ID
-            logger.debug(f"Generating ID for authors: {authors}, year: {year}")
-            if authors and len(authors) > 0:
-                # Create a more comprehensive author ID
-                def parse_author_name(author):
-                    """Parse author name into first initial and last name."""
-                    author = author.strip()
-                    logger.debug(f"Parsing author name: '{author}'")
-                    if ',' in author:
-                        # Format: "Last, First" or "Last, F."
-                        parts = author.split(',')
-                        last_name = parts[0].strip()
-                        first_part = parts[1].strip() if len(parts) > 1 else ''
-                        first_initial = first_part[0] if first_part else ''
-                        logger.debug(f"Parsed as Last,First: last='{last_name}', first='{first_initial}'")
-                        return last_name, first_initial
-                    else:
-                        # Format: "First Last" or "F. Last"
-                        parts = author.split()
-                        if len(parts) >= 2:
-                            first_part = parts[0]
-                            last_name = parts[-1]
-                            first_initial = first_part[0] if first_part else ''
-                            logger.debug(f"Parsed as First Last: last='{last_name}', first='{first_initial}'")
-                            return last_name, first_initial
-                        else:
-                            # Single word, assume it's last name
-                            logger.debug(f"Single word author: '{author}'")
-                            return author, ''
-
-                if len(authors) == 1:
-                    # Single author: [LastName FirstInitial Year]
-                    last_name, first_initial = parse_author_name(authors[0])
-                    if first_initial:
-                        human_id = f"[{last_name} {first_initial} {year or 'Unknown'}]"
-                    else:
-                        human_id = f"[{last_name} {year or 'Unknown'}]"
-                elif len(authors) == 2:
-                    # Two authors: [LastName1 FI, LastName2 FI Year]
-                    author1_last, author1_first = parse_author_name(authors[0])
-                    author2_last, author2_first = parse_author_name(authors[1])
-
-                    author1_part = f"{author1_last} {author1_first}".strip()
-                    author2_part = f"{author2_last} {author2_first}".strip()
-
-                    human_id = f"[{author1_part}, {author2_part} {year or 'Unknown'}]"
-                else:
-                    # Multiple authors: use first author + "et al"
-                    first_last, first_initial = parse_author_name(authors[0])
-                    if first_initial:
-                        human_id = f"[{first_last} {first_initial} et al. {year or 'Unknown'}]"
-                    else:
-                        human_id = f"[{first_last} et al. {year or 'Unknown'}]"
-            else:
-                # No authors available
-                human_id = f"[Unknown {year or 'Unknown'}]"
-
-            logger.debug(f"Generated human ID: {human_id}")
-
-            # Extract clean publication info (remove authors, keep journal/publisher)
-            publication = self._extract_publication_info(summary)
-
-            # Create standardized paper dictionary according to PRD
-            paper = {
-                "paper_id": index + 1,  # Simple incrementing ID for search results
-                "id": human_id,
-                "title": title,
-                "year": year,
-                "publication": publication,
-                "authors": authors if authors else [],
-                "keywords": [],  # Empty for now, can be filled later
-                "source": "google_scholar",
-                "project_id": None,  # Will be set by search caller
-                # Additional fields for compatibility
-                "summary": snippet or summary,
-                "link": link,
-                "pdf_url": pdf_url,
-                "publication_info": self._clean_publication_info(summary),
-                "citation_count": citation_count,
-                "cites_id": cites_id,
-                "result_id": result_id,
-                "metadata": {
-                    "inline_links": inline_links,
-                    "resources": resources,
-                    "publication_info": pub_info
-                }
-            }
-
-            # Try to get BibTeX link if available
-            bibtex_link = self._get_bibtex_link(result_id)
-            if bibtex_link:
-                paper["bibtex_link"] = bibtex_link
-
-            return paper
+            logger.info(f"Google Scholar search completed: {len(papers)} papers found")
+            return papers
 
         except Exception as e:
-            logger.error(f"Error extracting paper from result: {e}")
-            return None
-
-
-
-    def _extract_publication_info(self, summary: str) -> str:
-        """
-        Extract clean publication information from SerpAPI summary.
-        Follows PRD format: "Journal Name, Volume(Issue), Pages"
-
-        Args:
-            summary: Raw publication summary from SerpAPI
-
-        Returns:
-            Clean publication info in PRD format
-        """
-        if not summary:
-            return "Unknown Publication"
-
-        # Remove author names (typically before the first dash)
-        # Pattern: "Author1, Author2, ... - Journal Name, year - Publisher"
-        parts = summary.split(' - ')
-
-        if len(parts) >= 2:
-            # Remove the first part (authors) and get journal info
-            journal_part = parts[1].strip()
-
-            # Clean up the journal name
-            journal = journal_part.replace('…', '').strip()
-
-            # Try to extract volume/issue/page info if present
-            # Look for common patterns like "Journal Name, 2021, vol. 45(2), pp. 123-456"
-            # or "Journal Name, vol. 45, issue 2"
-
-            # For now, return the journal name as primary publication info
-            # This matches the expected format better than including year/publisher
-            return journal
-
-        # Fallback: return the original summary if parsing fails
-        return summary.strip()
-
-    def _clean_publication_info(self, summary: str) -> str:
-        """
-        Clean publication info for the publication_info field.
-
-        Args:
-            summary: Raw publication summary from SerpAPI
-
-        Returns:
-            Cleaned publication info string
-        """
-        if not summary:
-            return ""
-
-        # For publication_info, we want to keep some author info but clean it up
-        # Remove excessive ellipses and clean formatting
-        cleaned = summary.replace('…', '').strip()
-
-        # Remove multiple consecutive spaces
-        while '  ' in cleaned:
-            cleaned = cleaned.replace('  ', ' ')
-
-        return cleaned
-
-
-
-    def _find_pdf_url(self, resources: List[Dict]) -> Optional[str]:
-        """
-        Find PDF URL from resources list.
-
-        Args:
-            resources: List of resource dictionaries
-
-        Returns:
-            PDF URL or None
-        """
-        for resource in resources:
-            if resource.get("file_format", "").upper() == "PDF":
-                return resource.get("link")
-
-        return None
-
-    def _get_bibtex_link(self, result_id: str) -> Optional[str]:
-        """
-        Get BibTeX download link for a paper.
-
-        Args:
-            result_id: SerpAPI result ID
-
-        Returns:
-            BibTeX link or None
-        """
-        try:
-            # This would require an additional API call to get BibTeX
-            # For now, return None - can be implemented later
-            return None
-
-        except Exception as e:
-            logger.debug(f"Could not get BibTeX link: {e}")
-            return None
+            logger.error(f"Google Scholar search failed: {e}")
+            return []
 
     def get_paper_details(self, paper_id: str) -> Optional[Dict[str, Any]]:
         """
         Get detailed information for a specific paper.
 
-        Note: Google Scholar doesn't have persistent paper IDs,
-        so this method may not work reliably for stored papers.
+        Note: SerpAPI doesn't provide direct paper detail lookup by ID,
+        so this returns basic information if available from cache.
 
         Args:
-            paper_id: Paper identifier (may not work for Google Scholar)
+            paper_id: Paper identifier (not directly usable with SerpAPI)
 
         Returns:
-            Paper dictionary or None
+            None (not supported by this engine)
         """
-        # Google Scholar doesn't provide persistent IDs for papers
-        # This would require re-searching or using title-based lookup
-        logger.warning("Google Scholar engine doesn't support paper detail lookup by ID")
+        logger.debug(f"Paper detail lookup not supported for Google Scholar engine")
         return None
 
     def get_citing_papers(self, paper_id: str) -> List[Dict[str, Any]]:
@@ -400,170 +118,388 @@ class GoogleScholarEngine(BaseSearchEngine):
         Get papers that cite the specified paper.
 
         Args:
-            paper_id: Paper identifier (cites_id from search results)
+            paper_id: Paper identifier from Google Scholar
 
         Returns:
             List of citing paper dictionaries
         """
+        if not self.is_available():
+            logger.warning("Google Scholar engine not available for citation search")
+            return []
+
         try:
-            if not paper_id:
-                return []
-
-            # Prepare citation search parameters
-            params = {
-                "engine": "google_scholar",
-                "cites": paper_id,
-                "api_key": self.api_key,
-                "num": 10  # Limit results
-            }
-
-            logger.debug(f"Getting citing papers for ID: {paper_id}")
-
-            response = requests.get(
-                self.endpoint,
-                params=params,
-                timeout=self.config.get('request_timeout', 10.0)
-            )
-            response.raise_for_status()
-
-            data = response.json()
-
-            # Extract citing papers
+            # Use SerpAPI's cite parameter to get citing papers
+            citing_results = self._search_google_scholar_with_cites(paper_id)
             citing_papers = []
-            organic_results = data.get("organic_results", [])
 
-            for result in organic_results[:10]:  # Limit to 10 results
-                paper = self._extract_paper_from_result(result, 0)
+            for result in citing_results:
+                paper = self._extract_paper_from_result(result)
                 if paper:
+                    # Mark as citing paper
+                    paper['is_citing_paper'] = True
+                    paper['cited_paper_id'] = paper_id
                     citing_papers.append(paper)
 
-            logger.debug(f"Found {len(citing_papers)} citing papers")
+            logger.info(f"Found {len(citing_papers)} citing papers")
             return citing_papers
 
-        except requests.RequestException as e:
-            logger.error(f"Citing papers API request failed: {e}")
-            return []
         except Exception as e:
             logger.error(f"Error getting citing papers: {e}")
             return []
 
-    def search_by_author(self, author_name: str, **kwargs) -> List[Dict[str, Any]]:
-        """Search papers by author - not directly supported by Google Scholar API."""
-        logger.info(f"Google Scholar author search not supported for: {author_name}")
-        return [{"error": f"Author search not supported by {self.name}. Use general search with author name in query."}]
+    def _search_google_scholar(self, query: str, max_results: int = 10,
+                              date_from: Optional[str] = None,
+                              date_to: Optional[str] = None) -> List[Dict]:
+        """
+        Perform Google Scholar search using SerpAPI.
 
-    def find_related_papers(self, reference_paper: Dict[str, Any], **kwargs) -> List[Dict[str, Any]]:
-        """Find related papers - limited support through SerpAPI."""
-        logger.info(f"Finding related papers for: {reference_paper.get('title', 'Unknown')}")
-        return [{"error": f"Related papers discovery not fully supported by {self.name}. Use keyword-based search instead."}]
+        Args:
+            query: Search query
+            max_results: Maximum results to return
+            date_from: Start date filter
+            date_to: End date filter
 
-    def get_search_engine_categories(self) -> Dict[str, Any]:
-        """Get Google Scholar categories - not applicable."""
-        logger.info("Google Scholar categories not applicable")
-        return {
-            "engine_id": self.id,
-            "engine_name": self.name,
-            "categories": {},
-            "total_categories": 0,
-            "popular_categories": [],
-            "usage_note": f"{self.name} doesn't use predefined categories. Use general search terms."
+        Returns:
+            Raw API response results
+        """
+        import os
+
+        api_key = os.getenv("SERP_API_KEY")
+        if not api_key:
+            raise ValueError("SERP_API_KEY environment variable not set")
+
+        # Build search parameters
+        params = {
+            'engine': 'google_scholar',
+            'q': query,
+            'api_key': api_key,
+            'num': min(max_results, 20),  # SerpAPI max is 20
+            'start': 0
         }
 
-    def analyze_paper_trends(self, papers: List[Dict[str, Any]], analysis_type: str) -> Dict[str, Any]:
-        """Analyze paper trends - basic support."""
-        if not papers:
-            return {"error": "No papers to analyze"}
+        # Add date filters if provided
+        if date_from or date_to:
+            if date_from:
+                params['as_ylo'] = date_from.split('-')[0]  # Year only
+            if date_to:
+                params['as_yhi'] = date_to.split('-')[0]    # Year only
 
+        # Make API request
+        url = f"https://serpapi.com/search.json?{urlencode(params)}"
+
+        logger.debug(f"Making SerpAPI request: {url.replace(api_key, '***')}")
+
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Extract organic results
+        organic_results = data.get('organic_results', [])
+        logger.debug(f"Received {len(organic_results)} organic results from SerpAPI")
+
+        return organic_results
+
+    def _search_google_scholar_with_cites(self, paper_id: str) -> List[Dict]:
+        """
+        Search for papers citing a specific paper using SerpAPI's cite parameter.
+
+        Args:
+            paper_id: Google Scholar paper identifier
+
+        Returns:
+            List of citing paper results
+        """
+        import os
+
+        api_key = os.getenv("SERP_API_KEY")
+        if not api_key:
+            raise ValueError("SERP_API_KEY environment variable not set")
+
+        # Build citation search parameters
+        params = {
+            'engine': 'google_scholar',
+            'q': '',  # Empty query
+            'api_key': api_key,
+            'num': 10,
+            'cites': paper_id  # Cite this paper
+        }
+
+        url = f"https://serpapi.com/search.json?{urlencode(params)}"
+
+        logger.debug(f"Making citation SerpAPI request for paper: {paper_id}")
+
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        data = response.json()
+        organic_results = data.get('organic_results', [])
+
+        return organic_results
+
+    def _extract_paper_from_result(self, result: Dict) -> Optional[Dict[str, Any]]:
+        """
+        Extract paper information from SerpAPI result.
+
+        Args:
+            result: Single result from SerpAPI response
+
+        Returns:
+            Standardized paper dictionary or None if extraction fails
+        """
         try:
-            if analysis_type == "authors":
-                # Basic author analysis
-                all_authors = []
-                for paper in papers:
-                    authors = paper.get("authors", [])
-                    if isinstance(authors, str):
-                        authors = [authors]
-                    all_authors.extend(authors)
+            # Extract basic information
+            title = result.get('title', '').strip()
+            if not title:
+                return None
 
-                from collections import Counter
-                author_counts = Counter(all_authors)
+            # Extract publication info and authors
+            publication_info = result.get('publication_info', {})
+            summary = publication_info.get('summary', '')
 
-                return {
-                    "analysis_type": "authors",
-                    "total_unique_authors": len(author_counts),
-                    "most_prolific_authors": author_counts.most_common(10),
-                    "note": f"Basic analysis from {self.name} data"
-                }
+            # Extract authors using centralized method
+            authors = self._extract_authors(publication_info)
 
-            elif analysis_type == "timeline":
-                # Basic timeline analysis
-                date_counts = {}
-                for paper in papers:
-                    date = paper.get("published_date", "")
-                    if date:
-                        year = date.split("-")[0]
-                        date_counts[year] = date_counts.get(year, 0) + 1
+            # Extract year
+            year = self._extract_year(summary)
 
-                return {
-                    "analysis_type": "timeline",
-                    "papers_by_year": date_counts,
-                    "note": f"Basic timeline analysis from {self.name} data"
-                }
+            # Generate human-readable ID
+            human_id = self._generate_human_id(authors, year)
 
-            else:
-                return {"error": f"Analysis type '{analysis_type}' not supported by {self.name}"}
+            # Extract other metadata
+            link = result.get('link', '')
+            snippet = result.get('snippet', '')
 
-        except Exception as e:
-            return {"error": f"Analysis failed: {str(e)}"}
+            # Extract keywords from available text
+            keywords = self._extract_keywords(title, snippet, summary)
+            pdf_link = self._find_pdf_url(result)
 
-    def export_search_results(self, papers: List[Dict[str, Any]], format_type: str, **kwargs) -> Dict[str, Any]:
-        """Export search results - basic support."""
-        try:
-            import json
-            from datetime import datetime
+            # Build complete paper dictionary with ALL available data
+            # This includes both PRD fields and additional metadata for database storage
+            paper = {
+                # PRD-compliant fields
+                'paper_id': None,  # Will be assigned by database when stored
+                'id': human_id,
+                'title': title,
+                'year': year or 0,
+                'publication': self._extract_publication(summary),
+                'authors': authors,
+                'keywords': keywords,
+                'source': self.id,
+                'project_id': None,  # Will be assigned when stored with project
 
-            if not papers:
-                return {"error": "No papers to export"}
-
-            if format_type == "json":
-                content = json.dumps(papers, indent=4)
-            elif format_type == "bibtex":
-                # Generate basic BibTeX from available data
-                bibtex_entries = []
-                for i, paper in enumerate(papers):
-                    authors = paper.get("authors", ["unknown"])
-                    if isinstance(authors, str):
-                        authors = [authors]
-
-                    year = paper.get("published_date", "unknown").split("-")[0]
-                    title = paper.get("title", "No Title")
-
-                    first_author = "unknown"
-                    if authors and authors[0] != "unknown":
-                        name_parts = authors[0].split(" ")
-                        if name_parts:
-                            first_author = name_parts[-1]
-
-                    key = f"{first_author.lower()}{year}"
-
-                    entry = f"""@article{{{key},
-    title={{{title}}},
-    author={{"{" and ".join(authors)}"}},
-    year={{{year}}}
-}}"""
-                    bibtex_entries.append(entry)
-
-                content = "\n\n".join(bibtex_entries)
-            else:
-                return {"error": f"Format '{format_type}' not supported by {self.name}"}
-
-            return {
-                "success": True,
-                "format": format_type,
-                "papers_exported": len(papers),
-                "content_preview": content[:500] + ("..." if len(content) > 500 else ""),
-                "export_data": content,
-                "note": f"Basic export from {self.name} data"
+                # Additional fields for complete database storage
+                'summary': summary,
+                'abstract': snippet,
+                'snippet': snippet,
+                'publication_info': self._extract_publication(summary),
+                'publication_year': year or 0,
+                'source_url': link,
+                'pdf_url': pdf_link,
+                'doi': '',
+                'citations': self._extract_citation_count(result),
+                'citation_count': self._extract_citation_count(result),
+                'cites_id': result.get('cited_by_url', ''),
+                'result_id': result.get('result_id', ''),
+                'bibtex_link': '',
+                'cached_page_link': result.get('cached_page_link', ''),
+                'related_pages_link': result.get('related_pages_link', ''),
+                'versions_count': result.get('versions', {}).get('count', 0),
+                'versions_link': result.get('versions', {}).get('link', ''),
+                'resources': json.dumps(result.get('resources', [])),
+                'metadata': json.dumps({
+                    'serpapi_result': result,
+                    'extraction_timestamp': str(datetime.now())
+                })
             }
 
+            return paper
+
         except Exception as e:
-            return {"error": f"Export failed: {str(e)}"}
+            logger.error(f"Error extracting paper from result: {e}")
+            return None
+
+    def _extract_keywords(self, title: str, snippet: str, summary: str) -> List[str]:
+        """
+        Extract keywords from paper text fields.
+
+        Args:
+            title: Paper title
+            snippet: Paper snippet/abstract
+            summary: Publication summary
+
+        Returns:
+            List of extracted keywords
+        """
+        # Combine all text for keyword extraction
+        text = f"{title} {snippet} {summary}".lower()
+
+        # Academic/ML keywords to look for
+        academic_keywords = [
+            # Machine Learning & AI
+            'machine learning', 'deep learning', 'neural network', 'artificial intelligence', 'ai',
+            'computer vision', 'natural language processing', 'nlp', 'reinforcement learning',
+            'supervised learning', 'unsupervised learning', 'semi-supervised learning',
+
+            # Algorithms & Techniques
+            'classification', 'regression', 'clustering', 'optimization', 'gradient descent',
+            'backpropagation', 'convolutional neural network', 'cnn', 'recurrent neural network', 'rnn',
+            'transformer', 'attention mechanism', 'embedding', 'feature extraction', 'dimensionality reduction',
+
+            # Computer Science
+            'algorithm', 'data mining', 'big data', 'data science', 'parallel computing',
+            'distributed computing', 'cloud computing', 'edge computing',
+
+            # Research Areas
+            'information retrieval', 'search engine', 'recommendation system', 'chatbot',
+            'virtual assistant', 'autonomous system', 'robotics', 'computer graphics',
+            'human-computer interaction', 'software engineering',
+
+            # Data & Statistics
+            'statistics', 'probability', 'bayesian', 'stochastic process', 'time series',
+            'anomaly detection', 'predictive modeling', 'data visualization',
+
+            # Applications
+            'medical imaging', 'drug discovery', 'financial modeling', 'cybersecurity',
+            'climate modeling', 'autonomous vehicle', 'smart city', 'internet of things',
+
+            # General Academic
+            'research', 'methodology', 'evaluation', 'benchmark', 'performance',
+            'scalability', 'efficiency', 'robustness', 'generalization'
+        ]
+
+        extracted_keywords = []
+
+        for keyword in academic_keywords:
+            if keyword in text:
+                # Capitalize first letter of each word for display
+                formatted_keyword = ' '.join(word.capitalize() for word in keyword.split())
+                if formatted_keyword not in extracted_keywords:
+                    extracted_keywords.append(formatted_keyword)
+
+        # Limit to top 10 most relevant keywords
+        return extracted_keywords[:10]
+
+    def _generate_human_id(self, authors: List[str], year: Optional[int]) -> str:
+        """
+        Generate human-readable paper ID from authors and year.
+
+        Args:
+            authors: List of author names
+            year: Publication year
+
+        Returns:
+            Human-readable ID string
+        """
+        if not authors:
+            return f"[Unknown Author {year or 'Unknown Year'}]"
+
+        def parse_author_name(name: str) -> tuple:
+            """Parse author name into last name and first initial."""
+            name = name.strip()
+
+            # Handle "Last, First" format
+            if ',' in name:
+                parts = name.split(',', 1)
+                last_name = parts[0].strip()
+                first_part = parts[1].strip()
+                first_initial = first_part[0] if first_part else ''
+                return last_name, first_initial
+
+            # Handle "First Last" format
+            parts = name.split()
+            if len(parts) >= 2:
+                first_name = parts[0]
+                last_name = parts[-1]
+                first_initial = first_name[0] if first_name else ''
+                return last_name, first_initial
+
+            # Fallback: use entire name as last name
+            return name, ''
+
+        # Generate ID based on author count
+        if len(authors) == 1:
+            last_name, first_initial = parse_author_name(authors[0])
+            return f"[{last_name} {first_initial} {year or 'Unknown Year'}]"
+
+        elif len(authors) == 2:
+            author1_last, author1_initial = parse_author_name(authors[0])
+            author2_last, author2_initial = parse_author_name(authors[1])
+            return f"[{author1_last} {author1_initial}, {author2_last} {author2_initial} {year or 'Unknown Year'}]"
+
+        else:  # 3+ authors
+            first_author_last, first_author_initial = parse_author_name(authors[0])
+            return f"[{first_author_last} {first_author_initial} et al. {year or 'Unknown Year'}]"
+
+    def _extract_publication(self, summary: str) -> str:
+        """
+        Extract publication information from summary text.
+
+        Args:
+            summary: Publication summary text
+
+        Returns:
+            Publication string
+        """
+        if not summary:
+            return "Unknown Publication"
+
+        # Try to extract publication after " - " separator
+        if " - " in summary:
+            parts = summary.split(" - ", 1)
+            if len(parts) > 1:
+                publication_part = parts[1].strip()
+                # Remove year if present at the end
+                publication_part = re.sub(r',\s*\d{4}$', '', publication_part)
+                return publication_part
+
+        return "Unknown Publication"
+
+    def _find_pdf_url(self, result: Dict) -> Optional[str]:
+        """
+        Find PDF download URL from result.
+
+        Args:
+            result: SerpAPI result dictionary
+
+        Returns:
+            PDF URL or None if not found
+        """
+        # Check for direct PDF link
+        resources = result.get('resources', [])
+        for resource in resources:
+            if resource.get('file_format') == 'PDF':
+                return resource.get('link')
+
+        # Check for PDF in snippet or other fields
+        snippet = result.get('snippet', '').lower()
+        if 'pdf' in snippet:
+            # Look for PDF links in the result
+            for key, value in result.items():
+                if isinstance(value, str) and value.lower().endswith('.pdf'):
+                    return value
+
+        return None
+
+    def _extract_citation_count(self, result: Dict) -> Optional[int]:
+        """
+        Extract citation count from result.
+
+        Args:
+            result: SerpAPI result dictionary
+
+        Returns:
+            Citation count or None if not found
+        """
+        cited_by = result.get('cited_by', {})
+        if isinstance(cited_by, dict):
+            count = cited_by.get('value')
+            if isinstance(count, str):
+                # Extract number from strings like "Cited by 42"
+                match = re.search(r'(\d+)', count)
+                if match:
+                    return int(match.group(1))
+            elif isinstance(count, int):
+                return count
+
+        return None
